@@ -4,13 +4,11 @@ require('dotenv').config();
 const fastify = require('fastify')({ logger: true });
 const { Client } = require('pg');
 
-// 1. Ensure DATABASE_URL exists before starting
 if (!process.env.DATABASE_URL) {
   console.error("CRITICAL ERROR: DATABASE_URL is not defined in Environment Variables.");
   process.exit(1);
 }
 
-// 2. SSL is REQUIRED for Render's free PostgreSQL databases
 const client = new Client({ 
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false } 
@@ -46,12 +44,8 @@ fastify.post('/verify', async (request, reply) => {
       return reply.send({ status: 'expired' });
     }
 
-    // First activation: bind HWID
     if (!license.hwid) {
-      await client.query('UPDATE licenses SET hwid = $1 WHERE license_key = $2', [
-        hwid,
-        key,
-      ]);
+      await client.query('UPDATE licenses SET hwid = $1 WHERE license_key = $2', [hwid, key]);
       return reply.send({
         status: 'active',
         type: 'standard',
@@ -108,17 +102,20 @@ fastify.get('/generate', async (request, reply) => {
 
 async function main() {
   try {
-    // 3. Connect to the database
-    await client.connect();
-    fastify.log.info("Connected to database successfully");
+    console.log("[1/3] Starting initialization...");
 
-    // 4. Render requires binding to 0.0.0.0 and using process.env.PORT
+    // 1. OPEN THE PORT FIRST (This stops Render from cancelling)
     const port = process.env.PORT || 10000;
     await fastify.listen({ port: Number(port), host: '0.0.0.0' });
-    
-    fastify.log.info(`Gemhunter auth listening on port ${port}`);
+    console.log(`[2/3] ✅ Server successfully bound to port ${port}`);
+
+    // 2. CONNECT TO DATABASE SECOND
+    console.log("[3/3] Attempting to connect to PostgreSQL...");
+    await client.connect();
+    console.log("🎉 SUCCESS: Connected to the database. Ready for traffic!");
+
   } catch (err) {
-    console.error("Setup Error:", err);
+    console.error("❌ CRITICAL SETUP ERROR:", err);
     process.exit(1);
   }
 }
