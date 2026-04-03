@@ -1,12 +1,5 @@
 'use strict';
 
-/**
- * Gemhunter Sender license server
- * Fixed for Render deployment:
- * - Proper Port binding (0.0.0.0:10000)
- * - Improved error handling for database connection
- */
-
 require('dotenv').config();
 const fastify = require('fastify')({ logger: true });
 const { Client } = require('pg');
@@ -17,9 +10,10 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+// 2. SSL is REQUIRED for Render's free PostgreSQL databases
 const client = new Client({ 
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Required for some hosted Postgres providers
+  ssl: { rejectUnauthorized: false } 
 });
 
 const EXPECTED_SALT = (process.env.SECRET_SALT || '').trim();
@@ -28,8 +22,7 @@ fastify.post('/verify', async (request, reply) => {
   const body = request.body || {};
   const key = typeof body.key === 'string' ? body.key.trim() : '';
   const hwid = typeof body.hwid === 'string' ? body.hwid.trim() : '';
-  const secretSalt =
-    typeof body.secret_salt === 'string' ? body.secret_salt.trim() : '';
+  const secretSalt = typeof body.secret_salt === 'string' ? body.secret_salt.trim() : '';
 
   if (!EXPECTED_SALT || secretSalt !== EXPECTED_SALT) {
     return reply.send({ status: 'invalid' });
@@ -45,13 +38,8 @@ fastify.post('/verify', async (request, reply) => {
     );
     const license = res.rows[0];
 
-    if (!license) {
-      return reply.send({ status: 'invalid' });
-    }
-
-    if (license.status !== 'active') {
-      return reply.send({ status: 'revoked' });
-    }
+    if (!license) return reply.send({ status: 'invalid' });
+    if (license.status !== 'active') return reply.send({ status: 'revoked' });
 
     const expiry = new Date(license.expiry_date);
     if (Number.isNaN(expiry.getTime()) || new Date() > expiry) {
@@ -88,10 +76,6 @@ fastify.post('/verify', async (request, reply) => {
   }
 });
 
-/**
- * Admin: create a 30-day key.
- * GET /generate?admin_pass=...&key_name=User%20Name
- */
 fastify.get('/generate', async (request, reply) => {
   const adminPass = request.query.admin_pass;
   const keyName =
@@ -124,14 +108,14 @@ fastify.get('/generate', async (request, reply) => {
 
 async function main() {
   try {
+    // 3. Connect to the database
     await client.connect();
     fastify.log.info("Connected to database successfully");
 
-    // Render requires binding to 0.0.0.0 and using process.env.PORT
+    // 4. Render requires binding to 0.0.0.0 and using process.env.PORT
     const port = process.env.PORT || 10000;
-    const host = '0.0.0.0'; 
-
-    await fastify.listen({ port: Number(port), host: host });
+    await fastify.listen({ port: Number(port), host: '0.0.0.0' });
+    
     fastify.log.info(`Gemhunter auth listening on port ${port}`);
   } catch (err) {
     console.error("Setup Error:", err);
