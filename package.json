@@ -1,0 +1,14 @@
+{
+  "name": "gemhunter-auth",
+  "version": "1.0.0",
+  "description": "License API for Gemhunter Sender (verify + HWID lock + 30-day keys)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fastify": "^4.26.0",
+    "pg": "^8.11.0"
+  }
+}
