@@ -1,19 +1,26 @@
 'use strict';
 
 /**
- * Gemhunter Sender license server — must match client in ../src/license.ts:
- * - POST JSON: { key, hwid, secret_salt, heartbeat?: boolean }
- * - Success: { status: "active", licensedTo?, name?, type? }
- * - HWID conflict: status one of hwid_mismatch | wrong_machine | machine_mismatch | binding_mismatch
- * - Revoked / expired: status "revoked" | "expired"
- * - Invalid key or salt: status "invalid" (client treats non-active as invalid)
+ * Gemhunter Sender license server
+ * Fixed for Render deployment:
+ * - Proper Port binding (0.0.0.0:10000)
+ * - Improved error handling for database connection
  */
 
 require('dotenv').config();
 const fastify = require('fastify')({ logger: true });
 const { Client } = require('pg');
 
-const client = new Client({ connectionString: process.env.DATABASE_URL });
+// 1. Ensure DATABASE_URL exists before starting
+if (!process.env.DATABASE_URL) {
+  console.error("CRITICAL ERROR: DATABASE_URL is not defined in Environment Variables.");
+  process.exit(1);
+}
+
+const client = new Client({ 
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false } // Required for some hosted Postgres providers
+});
 
 const EXPECTED_SALT = (process.env.SECRET_SALT || '').trim();
 
@@ -66,7 +73,6 @@ fastify.post('/verify', async (request, reply) => {
     }
 
     if (license.hwid !== hwid) {
-      // Sender only treats these status strings as HWID mismatch (see license.ts)
       return reply.send({ status: 'hwid_mismatch' });
     }
 
@@ -83,8 +89,8 @@ fastify.post('/verify', async (request, reply) => {
 });
 
 /**
- * Admin: create a 30-day key. Protect ADMIN_PASSWORD in production.
- * GET /generate?admin_pass=...&key_name=Acme%20Corp
+ * Admin: create a 30-day key.
+ * GET /generate?admin_pass=...&key_name=User%20Name
  */
 fastify.get('/generate', async (request, reply) => {
   const adminPass = request.query.admin_pass;
@@ -117,14 +123,20 @@ fastify.get('/generate', async (request, reply) => {
 });
 
 async function main() {
-  await client.connect();
-  const port = Number(process.env.PORT) || 3000;
-  const host = process.env.HOST || '0.0.0.0';
-  await fastify.listen({ port, host });
-  fastify.log.info(`Gemhunter auth listening on http://${host}:${port}`);
+  try {
+    await client.connect();
+    fastify.log.info("Connected to database successfully");
+
+    // Render requires binding to 0.0.0.0 and using process.env.PORT
+    const port = process.env.PORT || 10000;
+    const host = '0.0.0.0'; 
+
+    await fastify.listen({ port: Number(port), host: host });
+    fastify.log.info(`Gemhunter auth listening on port ${port}`);
+  } catch (err) {
+    console.error("Setup Error:", err);
+    process.exit(1);
+  }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main();
